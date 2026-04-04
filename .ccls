@@ -10,6 +10,12 @@
 -I/home/manoelv/.platformio/packages/framework-arduinoteensy/libraries/SD/src
 -I/home/manoelv/.platformio/packages/framework-arduinoteensy/libraries/SdFat/src
 -I/home/manoelv/.platformio/packages/framework-arduinoteensy/libraries/SerialFlash
+-I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/USBHost_t36
+-I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/USBHost_t36/utility
+-I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/Encoder
+-I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/Encoder/utility
+-I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/XPT2046_Touchscreen
+-I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/Adafruit STMPE610
 -I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/ILI9341_t3
 -I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/FastLED_SPITFT_GFX
 -I/home/manoelv/Projects/TeensyTesting/.pio/libdeps/teensy41/Framebuffer GFX
@@ -119,7 +125,7 @@
 -DPLATFORMIO=60119
 -D__IMXRT1062__
 -DARDUINO_TEENSY41
--DUSB_SERIAL
+-DUSB_MIDI_AUDIO_SERIAL
 -DARDUINO=10805
 -DTEENSYDUINO=159
 -DCORE_TEENSY
