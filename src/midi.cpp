@@ -11,30 +11,30 @@
 #include "synth_waveform.h"
 #include "wiring.h"
 
-typedef struct AmplitudeLerp AmplitudeLerp;
-
-std::vector<AmplitudeLerp> amplitudeLerps;
-
-struct AmplitudeLerp
-{
-  AmplitudeLerp(TIMS::Note *lerpNote, const float &lerpAmp, const float &lerpTime)
-    : note(lerpNote), startingAmp(lerpNote->fmAmplitude), goalAmp(lerpAmp)
-      , lerpTime(lerpTime)
-  {
-    amplitudeLerps.push_back(*this);
-  }
-
-  TIMS::Note *note;
-  float startingAmp = 0.f;
-  float goalAmp = 0.f;
-  float lerpTime = 0.f;
-  float timePassed = 0.f;
-};
-
 
 namespace TIMS
 {
-  std::array<TIMS::Note, NOTECOUNT>::iterator FindNote(const byte &note)
+  Note::Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fm
+      , AudioEffectEnvelope *p_adsr, const float &sineBase
+      , const float &fmBase)
+    : sine(p_sine), fm(p_fm), adsr(p_adsr), baseSineFreq(sineBase)
+      , baseFMFreq(fmBase)
+  {
+    sine->begin(0, baseSineFreq, WAVEFORM_SQUARE);
+    fm->begin(1, baseFMFreq, WAVEFORM_SAWTOOTH);
+
+    SetSineFrequency();
+    SetFMFrequency();
+
+    adsr->delay(0);
+    adsr->hold(0);
+    adsr->attack(100);
+    adsr->decay(200);
+    adsr->sustain(0.7);
+    adsr->release(200);
+  }
+
+  std::vector<TIMS::Note>::iterator FindNote(const byte &note)
   {
     for(auto it = notes.begin(); it != notes.end(); ++it)
     {
@@ -47,8 +47,11 @@ namespace TIMS
     return notes.end();
   }
 
-  std::array<TIMS::Note, 1>::iterator FindNextOpenNote()
+  std::vector<TIMS::Note>::iterator FindNextOpenNote()
   {
+    // Check all notes to see if any arn't playing. If there arn't any open then
+    // select the note at the NoteIterator value and increment it so that it
+    // cycles.
     for(auto it = notes.begin(); it != notes.end(); ++it)
     {
       if(it->isPlaying == false)
@@ -57,43 +60,42 @@ namespace TIMS
       }
     }
 
-    return notes.begin();
-  }
+    // Get the next midi note in the cycle
+    auto it = notes.begin() + Note::NoteIterator++;
+    // If we go beyond the number of notes we have, cycle back to 0
+    if(Note::NoteIterator >= notes.size()) 
+    {
+      Note::NoteIterator = 0;
+    }
 
-  void TIMS::Note::SetSineWaveform(AudioSynthWaveform *waveForm)
-  {
-    sine = waveForm;
-  }
-
-  void TIMS::Note::SetFMWaveform(AudioSynthWaveformSineModulated *waveForm)
-  {
-    fm = waveForm;
+    return it;
   }
 
   void TIMS::Note::SetSineFrequency()
   {
+    sineFreq = baseSineFreq * std::pow(2
+        , static_cast<float>(value - 69 + pitchWheelModifer) / 12.f);
     sine->frequency(sineFreq);
   }
 
   void TIMS::Note::SetFMFrequency()
   {
-    fmFreq = baseFMFreq * std::pow(2, static_cast<float>(value - 69) / 12.f);
+    fmFreq = baseFMFreq * std::pow(2
+        , static_cast<float>(value - 69 + pitchWheelModifer) / 12.f);
     fm->frequency(fmFreq);
   }
 
   void TIMS::Note::TurnOn()
   {
     isPlaying = true;
-    sine->amplitude(1);
-    fm->amplitude(fmAmplitude);
+    adsr->noteOn();
 
     Serial.print("Playing note: ");
     Serial.print(value);
     Serial.print(" With ferquencies: ");
-    Serial.print(sineFreq);
+    Serial.print(baseSineFreq);
     Serial.print(", ");
-    float testValue = std::pow(2, static_cast<float>(value - 69) / 12.f);
-    Serial.print(testValue);
+    Serial.print(sineFreq);
     Serial.print(", ");
     Serial.print(baseFMFreq);
     Serial.print(", ");
@@ -103,23 +105,22 @@ namespace TIMS
   void TIMS::Note::TurnOff()
   {
     isPlaying = false;
-    sine->amplitude(0);
-    fmAmplitude = 0;
-    fm->amplitude(fmAmplitude);
+    adsr->noteOff();
+
     Serial.print("Stopping note: ");
     Serial.println(value);
   }
 
-  void SetSine(const float &frequency)
+  void SetSineFrequency(const float &frequency)
   {
     for(TIMS::Note &note : notes)
     {
-      note.sineFreq = frequency;
+      note.baseSineFreq = frequency;
       note.SetSineFrequency();
     }
   }
 
-  void SetFMSine(const float &frequency)
+  void SetFMSineFrequency(const float &frequency)
   {
     for(TIMS::Note &note : notes)
     {
@@ -128,25 +129,66 @@ namespace TIMS
     }
   }
 
+  void SetSineAmplitude(const float &amplitude)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.sineAmplitude = amplitude;
+      note.sine->amplitude(note.sineAmplitude);
+    }
+  }
+
+  void SetFMSineAmplitude(const float &amplitude)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.fmAmplitude = amplitude;
+      note.fm->amplitude(note.fmAmplitude);
+    }
+  }
+
+  void SetAttack(const float &attack)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.adsr->attack(attack);
+    }
+  }
+
+  void SetDecay(const float &decay)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.adsr->decay(decay);
+    }
+  }
+
+  void SetSustain(const float &sustain)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.adsr->sustain(sustain);
+    }
+  }
+
+  void SetRelease(const float &release)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.adsr->release(release);
+    }
+  }
+
   void NoteOn(byte channel, byte note, byte velocity)
   { 
-    // This is an iterator of notes
-    auto foundNote = FindNote(note);
-   
-    if(foundNote == notes.end())
-    {
-      foundNote = FindNextOpenNote();
-    }
+    // This is an iterator of the note vector, notes
+    auto foundNote = FindNextOpenNote();
 
     foundNote->value = note;
 
     foundNote->SetFMFrequency();
+    foundNote->SetSineFrequency();
     foundNote->TurnOn();
-
-    // WARN: FORCING CLEAR RIGHT NOW THIS NEEDS TO BE FIXED TO REMOVE THE FOUND
-    // NOTE
-    amplitudeLerps.clear();
-    AmplitudeLerp(foundNote, 1.f, 500);
   }
 
   void NoteOff(byte channel, byte note, byte velocity)
@@ -158,36 +200,17 @@ namespace TIMS
       return;
     }
 
-    // WARN: FORCING CLEAR RIGHT NOW THIS NEEDS TO BE FIXED TO REMOVE THE FOUND
-    // NOTE
-    amplitudeLerps.clear();
-    AmplitudeLerp(foundNote, 0.f, 500);
+    foundNote->TurnOff();
   }
 
-  void TickAmplitudeLerp()
+  void OnPitchWheel(uint8_t channel, int pitchBend)
   {
-    for(auto it = amplitudeLerps.begin(); it != amplitudeLerps.end(); ++it)
-    {
-      it->timePassed++;
-      if(it->timePassed >= it->lerpTime)
-      {
-        // Turn off if we are lerping to 0
-        if(it->goalAmp == 0)
-        {
-          it->note->TurnOff();
-        }
-        amplitudeLerps.erase(it);
-        // TODO: replace this with proper handling of removal
-        return;
-      }
-      else
-      {
-        it->note->fmAmplitude = it->startingAmp
-          + (it->goalAmp - it->startingAmp) 
-          * it->timePassed / it->lerpTime;
+    Note::pitchWheelModifer = pitchBend / 8192.f;
 
-        it->note->fm->amplitude(it->note->fmAmplitude);
-      }
+    for(auto it = notes.begin(); it != notes.end(); ++it)
+    {
+      it->SetSineFrequency();
+      it->SetFMFrequency();
     }
   }
 }

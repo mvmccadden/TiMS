@@ -6,6 +6,10 @@
  *    Handles MIDI data interpretting
  */
 
+#include "effect_envelope.h"
+#include "synth_sine.h"
+#include "synth_waveform.h"
+#include "synth_wavetable.h"
 #include <Audio.h>
 
 #pragma once
@@ -14,6 +18,10 @@ namespace TIMS
 {
   struct Note
   {
+    Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fm
+        , AudioEffectEnvelope *p_adsr, const float &sineBase
+        , const float &fmBase);
+
     enum PLAYING_STATE
     {
       PS_OFF = 0
@@ -25,15 +33,22 @@ namespace TIMS
     // TODO: Update this with playing state instead of bool
     bool isPlaying = false;
     byte value = 69;
+
+    AudioSynthWaveform *sine;
+    AudioSynthWaveformModulated *fm;
+    AudioEffectEnvelope *adsr;
+
+    float baseSineFreq = 0.f;
     float sineFreq = 0.f;
+    float sineAmplitude = 0.f;
     float baseFMFreq = 0.f;
     float fmFreq = 0.f;
     float fmAmplitude = 0.f;
-    AudioSynthWaveform *sine;
-    AudioSynthWaveformSineModulated *fm;
 
-    void SetSineWaveform(AudioSynthWaveform *waveform);
-    void SetFMWaveform(AudioSynthWaveformSineModulated *waveform);
+    static inline float pitchWheelModifer = 0.f;
+
+    static inline uint8_t NoteIterator = 0;
+
     void TurnOn();
     void TurnOff();
     void SetSineFrequency();
@@ -42,14 +57,21 @@ namespace TIMS
 
   // NOTE: Will need to update the FindNote function in midi.cpp if this is
   // changed
-  constexpr uint8_t NOTECOUNT = 1;
-  inline std::array<TIMS::Note, NOTECOUNT> notes;
+  inline std::vector<TIMS::Note> notes;
 
-  void SetSine(const float &frequency);
-  void SetFMSine(const float &frequency);
+  // Sine functions
+  void SetSineFrequency(const float &frequency);
+  void SetFMSineFrequency(const float &frequency);
+  void SetSineAmplitude(const float &amplitude);
+  void SetFMSineAmplitude(const float &amplitude);
+
+  // ADSR functions
+  void SetAttack(const float &attack);
+  void SetDecay(const float &decay);
+  void SetSustain(const float &sustain);
+  void SetRelease(const float &release);
 
   void NoteOn(byte channel, byte note, byte velocity);
   void NoteOff(byte channel, byte note, byte velocity);
-
-  void TickAmplitudeLerp();
+  void OnPitchWheel(uint8_t channel, int pitchBend);
 }
