@@ -7,24 +7,28 @@
  */
 
 #include "midi.h"
-#include "synth_sine.h"
 #include "synth_waveform.h"
-#include "wiring.h"
-
 
 namespace TIMS
 {
-  Note::Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fm
-      , AudioEffectEnvelope *p_adsr, const float &sineBase
-      , const float &fmBase)
-    : sine(p_sine), fm(p_fm), adsr(p_adsr), baseSineFreq(sineBase)
-      , baseFMFreq(fmBase)
+  Note::Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fmA
+      , AudioSynthWaveformModulated *p_fmB, AudioEffectEnvelope *p_adsr
+      , const float &sineBase, const float &fmABase, const float &fmBBase)
+    : modulator(p_sine), carrierA(p_fmA), carrierB(p_fmB), adsr(p_adsr)
+      , baseModulatorFreq(sineBase)
+      , baseCarrierAFreq(fmABase), baseCarrierBFreq(fmBBase)
+      , modulatorAmplitude(0), carrierAAmplitude(1), carrierBAmplitude(1)
+      , carrierAWaveform(WAVEFORM_TRIANGLE)
+      , carrierBWaveform(WAVEFORM_SAWTOOTH)
+      , modulatorWaveform(WAVEFORM_TRIANGLE)
   {
-    sine->begin(0, baseSineFreq, WAVEFORM_SQUARE);
-    fm->begin(1, baseFMFreq, WAVEFORM_SAWTOOTH);
+    ResetCarrierA();
+    ResetCarrierB();
+    ResetModulator();
 
-    SetSineFrequency();
-    SetFMFrequency();
+    UpdateCarrierAFrequnecy();
+    UpdateCarrierBFrequnecy();
+    UpdateModulatorFrequnecy();
 
     adsr->delay(0);
     adsr->hold(0);
@@ -71,79 +75,135 @@ namespace TIMS
     return it;
   }
 
-  void TIMS::Note::SetSineFrequency()
-  {
-    sineFreq = baseSineFreq * std::pow(2
-        , static_cast<float>(value - 69 + pitchWheelModifer) / 12.f);
-    sine->frequency(sineFreq);
-  }
-
-  void TIMS::Note::SetFMFrequency()
-  {
-    fmFreq = baseFMFreq * std::pow(2
-        , static_cast<float>(value - 69 + pitchWheelModifer) / 12.f);
-    fm->frequency(fmFreq);
-  }
-
   void TIMS::Note::TurnOn()
   {
     isPlaying = true;
     adsr->noteOn();
 
     Serial.print("Playing note: ");
-    Serial.print(value);
-    Serial.print(" With ferquencies: ");
-    Serial.print(baseSineFreq);
-    Serial.print(", ");
-    Serial.print(sineFreq);
-    Serial.print(", ");
-    Serial.print(baseFMFreq);
-    Serial.print(", ");
-    Serial.println(fmFreq);
+    Serial.println(value);
+    Serial.print("Carrier A Frequency: ");
+    Serial.print(carrierAFreq);
+    Serial.print(", Amplitude: ");
+    Serial.println(carrierAAmplitude);
+    Serial.print("Carrier B Frequency: ");
+    Serial.print(carrierBFreq);
+    Serial.print(", Amplitude: ");
+    Serial.println(carrierBAmplitude);
+    Serial.print("Modulator Frequency: ");
+    Serial.print(modulatorFreq);
+    Serial.print(", Amplitude: ");
+    Serial.println(modulatorAmplitude);
+    Serial.println("---------------------------------------------------------");
   }
 
   void TIMS::Note::TurnOff()
   {
     isPlaying = false;
     adsr->noteOff();
-
-    Serial.print("Stopping note: ");
-    Serial.println(value);
+    
+    // Removing this to clear clutter :)
+    //Serial.print("Stopping note: ");
+    //Serial.println(value);
   }
 
-  void SetSineFrequency(const float &frequency)
+  void TIMS::Note::UpdateCarrierAFrequnecy()
+  {
+    carrierAFreq = baseCarrierAFreq * 
+      std::pow(2, static_cast<float>(value - 69 + pitchWheelModifer) 
+          / 12.f);
+
+    carrierA->frequency(carrierAFreq);
+  }
+
+  void TIMS::Note::UpdateCarrierBFrequnecy()
+  {
+    carrierBFreq = baseCarrierBFreq * 
+      std::pow(2, static_cast<float>(value - 69 + pitchWheelModifer) 
+          / 12.f);
+
+    carrierB->frequency(carrierBFreq);
+  }
+
+  void TIMS::Note::UpdateModulatorFrequnecy()
+  {
+    modulatorFreq = baseModulatorFreq;
+
+    if(modulatorFollowsKeyboard == true)
+    {
+      modulatorFreq *= std::pow(2
+          , static_cast<float>(value - 69 + pitchWheelModifer) / 12.f);
+    }
+
+    modulator->frequency(modulatorFreq);
+  }
+
+  void TIMS::Note::ResetCarrierA()
+  {
+    carrierA->begin(carrierAAmplitude, carrierAFreq, carrierAWaveform);
+  }
+
+  void TIMS::Note::ResetCarrierB()
+  {
+    carrierB->begin(carrierBAmplitude, carrierBFreq, carrierBWaveform);
+  }
+
+  void TIMS::Note::ResetModulator()
+  {
+    modulator->begin(modulatorAmplitude, modulatorFreq, modulatorWaveform);
+  }
+
+  void SetCarrierAFrequency(const float &frequency)
   {
     for(TIMS::Note &note : notes)
     {
-      note.baseSineFreq = frequency;
-      note.SetSineFrequency();
+      note.baseCarrierAFreq = frequency;
+      note.UpdateCarrierAFrequnecy();
     }
   }
 
-  void SetFMSineFrequency(const float &frequency)
+  void SetCarrierBFrequency(const float &frequency)
   {
     for(TIMS::Note &note : notes)
     {
-      note.baseFMFreq = frequency;
-      note.SetFMFrequency();
+      note.baseCarrierBFreq = frequency;
+      note.UpdateCarrierBFrequnecy();
     }
   }
 
-  void SetSineAmplitude(const float &amplitude)
+  void SetModulatorFrequency(const float &frequency)
   {
     for(TIMS::Note &note : notes)
     {
-      note.sineAmplitude = amplitude;
-      note.sine->amplitude(note.sineAmplitude);
+      note.baseModulatorFreq = frequency;
+      note.UpdateModulatorFrequnecy();
     }
   }
 
-  void SetFMSineAmplitude(const float &amplitude)
+  void SetCarrierAAmplitude(const float &amplitude)
   {
     for(TIMS::Note &note : notes)
     {
-      note.fmAmplitude = amplitude;
-      note.fm->amplitude(note.fmAmplitude);
+      note.carrierAAmplitude = amplitude;
+      note.carrierA->amplitude(note.carrierAAmplitude);
+    }
+  }
+
+  void SetCarrierBAmplitude(const float &amplitude)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.carrierBAmplitude = amplitude;
+      note.carrierB->amplitude(note.carrierBAmplitude);
+    }
+  }
+
+  void SetModulatorAmplitude(const float &amplitude)
+  {
+    for(TIMS::Note &note : notes)
+    {
+      note.modulatorAmplitude = amplitude;
+      note.modulator->amplitude(note.modulatorAmplitude);
     }
   }
 
@@ -179,6 +239,61 @@ namespace TIMS
     }
   }
 
+  void SetCarrierAWaveform(const int &waveForm)
+  {
+    for(Note &note : notes)
+    {
+      note.carrierAWaveform = waveForm;
+      note.ResetCarrierA();
+    }
+  }
+
+  void SetCarrierBWaveform(const int &waveForm)
+  {
+    for(Note &note : notes)
+    {
+      note.carrierBWaveform = waveForm;
+      note.ResetCarrierB();
+    }
+  }
+
+  void SetModulatorWaveform(const int &waveForm)
+  {
+    for(Note &note : notes)
+    {
+      note.modulatorWaveform = waveForm;
+      note.ResetModulator();
+    }
+  }
+
+  void SetModulatorKeyboardFollowing(const bool &follow)
+  {
+    for(Note &note: notes)
+    {
+      note.modulatorFollowsKeyboard = follow;
+      note.UpdateModulatorFrequnecy();
+    }
+  }
+
+  void SetFilterFreq(const float &freq)
+  {
+    Note::ladder->frequency(freq);
+  }
+
+  void SetFilterOctave(const float &octave)
+  {
+    Note::ladder->octaveControl(octave);
+  }
+
+  void SetFilterResonance(const float &resonance)
+  {
+    Note::ladder->resonance(resonance);
+  }
+
+// =====================
+//  MIDI NOTE HANDLING
+// =====================
+
   void NoteOn(byte channel, byte note, byte velocity)
   { 
     // This is an iterator of the note vector, notes
@@ -186,8 +301,9 @@ namespace TIMS
 
     foundNote->value = note;
 
-    foundNote->SetFMFrequency();
-    foundNote->SetSineFrequency();
+    foundNote->UpdateCarrierAFrequnecy();
+    foundNote->UpdateCarrierBFrequnecy();
+    foundNote->UpdateModulatorFrequnecy();
     foundNote->TurnOn();
   }
 
@@ -206,11 +322,12 @@ namespace TIMS
   void OnPitchWheel(uint8_t channel, int pitchBend)
   {
     Note::pitchWheelModifer = pitchBend / 8192.f;
-
-    for(auto it = notes.begin(); it != notes.end(); ++it)
+  
+    for(Note &note : notes)
     {
-      it->SetSineFrequency();
-      it->SetFMFrequency();
+      note.UpdateCarrierAFrequnecy();
+      note.UpdateCarrierBFrequnecy();
+      note.UpdateModulatorFrequnecy();
     }
   }
 }
