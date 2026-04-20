@@ -1,4 +1,4 @@
-/*!
+/ !
  *  \author Manoel McCadden
  *  \date   26-04-03
  *  \file   midi.cpp
@@ -11,77 +11,45 @@
 
 namespace TIMS
 {
+
+//=================
+//  Note Methods 
+//=================
+ 
   Note::Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fmA
-      , AudioSynthWaveformModulated *p_fmB, AudioEffectEnvelope *p_adsr
-      , const float &sineBase, const float &fmABase, const float &fmBBase)
-    : modulator(p_sine), carrierA(p_fmA), carrierB(p_fmB), adsr(p_adsr)
-      , baseModulatorFreq(sineBase)
-      , baseCarrierAFreq(fmABase), baseCarrierBFreq(fmBBase)
-      , modulatorAmplitude(0), carrierAAmplitude(1), carrierBAmplitude(1)
-      , carrierAWaveform(WAVEFORM_TRIANGLE)
-      , carrierBWaveform(WAVEFORM_SAWTOOTH)
-      , modulatorWaveform(WAVEFORM_TRIANGLE)
+      , AudioSynthWaveformModulated *p_fmB, AudioEffectEnvelope *p_adsr)
+    : modulator(p_sine), carrierA(p_fmA), carrierB(p_fmB), adsr(p_adsr) { }
+
+  void Note::SetNote(const byte &note)
   {
-    ResetCarrierA();
-    ResetCarrierB();
-    ResetModulator();
-
-    UpdateCarrierAFrequnecy();
-    UpdateCarrierBFrequnecy();
-    UpdateModulatorFrequnecy();
-
-    adsr->delay(0);
-    adsr->hold(0);
-    adsr->attack(100);
-    adsr->decay(200);
-    adsr->sustain(0.7);
-    adsr->release(200);
+    noteValue = note;
   }
 
-  std::vector<TIMS::Note>::iterator FindNote(const byte &note)
+  byte Note::GetNote()
   {
-    for(auto it = notes.begin(); it != notes.end(); ++it)
-    {
-      if(it->value == note)
-      {
-        return it;
-      }
-    }
-
-    return notes.end();
+    return noteValue;
   }
 
-  std::vector<TIMS::Note>::iterator FindNextOpenNote()
+  bool Note::GetPlaying()
   {
-    // Check all notes to see if any arn't playing. If there arn't any open then
-    // select the note at the NoteIterator value and increment it so that it
-    // cycles.
-    for(auto it = notes.begin(); it != notes.end(); ++it)
-    {
-      if(it->isPlaying == false)
-      {
-        return it;
-      }
-    }
-
-    // Get the next midi note in the cycle
-    auto it = notes.begin() + Note::NoteIterator++;
-    // If we go beyond the number of notes we have, cycle back to 0
-    if(Note::NoteIterator >= notes.size()) 
-    {
-      Note::NoteIterator = 0;
-    }
-
-    return it;
+    return isPlaying;
   }
 
-  void TIMS::Note::TurnOn()
+  const elapsedMillis &Note::GetElapsedTime()
+  {
+    return timeSincePlayed;
+  }
+
+  void Note::TurnOn()
   {
     isPlaying = true;
+    timeSincePlayed = 0;
     adsr->noteOn();
-
+    
+    // NOTE: Removing midi debug data for screen output
+    /*
     Serial.print("Playing note: ");
-    Serial.println(value);
+    Serial.println(noteValue);
     Serial.print("Carrier A Frequency: ");
     Serial.print(carrierAFreq);
     Serial.print(", Amplitude: ");
@@ -95,97 +63,163 @@ namespace TIMS
     Serial.print(", Amplitude: ");
     Serial.println(modulatorAmplitude);
     Serial.println("---------------------------------------------------------");
+    */
   }
 
-  void TIMS::Note::TurnOff()
+  void Note::TurnOff()
   {
     isPlaying = false;
     adsr->noteOff();
-    
+        
     // Removing this to clear clutter :)
     //Serial.print("Stopping note: ");
     //Serial.println(value);
   }
 
-  void TIMS::Note::UpdateCarrierAFrequnecy()
+  void Note::UpdateCarrierAFrequnecy()
   {
     carrierAFreq = baseCarrierAFreq * 
-      std::pow(2, static_cast<float>(value - 69 + pitchWheelModifer) 
+      std::pow(2, static_cast<float>(noteValue - 69 + pitchWheelModifer) 
           / 12.f);
 
     carrierA->frequency(carrierAFreq);
   }
 
-  void TIMS::Note::UpdateCarrierBFrequnecy()
+  void Note::UpdateCarrierBFrequnecy()
   {
     carrierBFreq = baseCarrierBFreq * 
-      std::pow(2, static_cast<float>(value - 69 + pitchWheelModifer) 
+      std::pow(2, static_cast<float>(noteValue - 69 + pitchWheelModifer) 
           / 12.f);
 
     carrierB->frequency(carrierBFreq);
   }
 
-  void TIMS::Note::UpdateModulatorFrequnecy()
+  void Note::UpdateModulatorFrequnecy()
   {
     modulatorFreq = baseModulatorFreq;
 
     if(modulatorFollowsKeyboard == true)
     {
       modulatorFreq *= std::pow(2
-          , static_cast<float>(value - 69 + pitchWheelModifer) / 12.f);
+          , static_cast<float>(noteValue - 69 + pitchWheelModifer) / 12.f);
     }
 
     modulator->frequency(modulatorFreq);
   }
 
-  void TIMS::Note::ResetCarrierA()
+  void Note::UpdateCarrierAAmplitude()
+  {
+    carrierA->amplitude(carrierAAmplitude);
+  }
+
+  void Note::UpdateCarrierBAmplitude()
+  {
+    carrierB->amplitude(carrierBAmplitude);
+  }
+
+  void Note::UpdateModulatorAmplitude()
+  {
+    modulator->amplitude(modulatorAmplitude);
+  }
+
+  void Note::UpdateAttack()
+  {
+    adsr->attack(attack);
+  }
+  
+  void Note::UpdateDecay()
+  {
+    adsr->decay(decay);
+  }
+
+  void Note::UpdateSustain()
+  {
+    adsr->sustain(sustain);
+  }
+  
+  void Note::UpdateRelease()
+  {
+    adsr->release(release);
+  }
+
+  void Note::ResetCarrierA()
   {
     carrierA->begin(carrierAAmplitude, carrierAFreq, carrierAWaveform);
   }
 
-  void TIMS::Note::ResetCarrierB()
+  void Note::ResetCarrierB()
   {
     carrierB->begin(carrierBAmplitude, carrierBFreq, carrierBWaveform);
   }
 
-  void TIMS::Note::ResetModulator()
+  void Note::ResetModulator()
   {
     modulator->begin(modulatorAmplitude, modulatorFreq, modulatorWaveform);
   }
 
+  void Note::InitalizeNote()
+  {
+    ResetCarrierA();
+    ResetCarrierB();
+    ResetModulator();
+
+    UpdateCarrierAFrequnecy();
+    UpdateCarrierBFrequnecy();
+    UpdateModulatorFrequnecy();
+
+    UpdateCarrierAAmplitude();
+    UpdateCarrierBAmplitude();
+    UpdateModulatorAmplitude();
+
+    adsr->delay(0);
+    adsr->hold(0);
+    UpdateAttack();
+    UpdateDecay();
+    UpdateSustain();
+    UpdateRelease();
+  }
+
+//=========================
+//  Public Set Functions
+//=========================
+
   void SetCarrierAFrequency(const float &frequency)
   {
-    for(TIMS::Note &note : notes)
+    Note::baseCarrierAFreq = frequency;
+
+    for(Note &note : notes)
     {
-      note.baseCarrierAFreq = frequency;
       note.UpdateCarrierAFrequnecy();
     }
   }
 
   void SetCarrierBFrequency(const float &frequency)
   {
-    for(TIMS::Note &note : notes)
+    Note::baseCarrierBFreq = frequency;
+
+    for(Note &note : notes)
     {
-      note.baseCarrierBFreq = frequency;
       note.UpdateCarrierBFrequnecy();
     }
   }
 
   void SetModulatorFrequency(const float &frequency)
   {
-    for(TIMS::Note &note : notes)
+    Note::baseModulatorFreq = frequency;
+
+    for(Note &note : notes)
     {
-      note.baseModulatorFreq = frequency;
       note.UpdateModulatorFrequnecy();
     }
   }
 
   void SetCarrierAAmplitude(const float &amplitude)
   {
-    for(TIMS::Note &note : notes)
+    Note::carrierAAmplitude = amplitude;
+
+    for(Note &note : notes)
     {
-      note.carrierAAmplitude = amplitude;
-      note.carrierA->amplitude(note.carrierAAmplitude);
+      note.UpdateCarrierAAmplitude();
     }
   }
 
@@ -194,129 +228,160 @@ namespace TIMS
     for(TIMS::Note &note : notes)
     {
       note.carrierBAmplitude = amplitude;
-      note.carrierB->amplitude(note.carrierBAmplitude);
+      note.UpdateCarrierBAmplitude();
     }
   }
 
   void SetModulatorAmplitude(const float &amplitude)
   {
-    for(TIMS::Note &note : notes)
+    for(Note &note : notes)
     {
       note.modulatorAmplitude = amplitude;
-      note.modulator->amplitude(note.modulatorAmplitude);
+      note.UpdateModulatorAmplitude();
     }
   }
 
   void SetAttack(const float &attack)
   {
-    for(TIMS::Note &note : notes)
+    Note::attack = attack;
+
+    for(Note &note : notes)
     {
-      note.adsr->attack(attack);
+      note.UpdateAttack();
     }
   }
 
   void SetDecay(const float &decay)
   {
-    for(TIMS::Note &note : notes)
+    Note::decay = decay;
+
+    for(Note &note : notes)
     {
-      note.adsr->decay(decay);
+      note.UpdateDecay();
     }
   }
 
   void SetSustain(const float &sustain)
   {
-    for(TIMS::Note &note : notes)
+    Note::sustain = sustain;
+
+    for(Note &note : notes)
     {
-      note.adsr->sustain(sustain);
+      note.UpdateSustain();
     }
   }
 
   void SetRelease(const float &release)
   {
-    for(TIMS::Note &note : notes)
+    Note::release = release;
+
+    for(Note &note : notes)
     {
-      note.adsr->release(release);
+      note.UpdateRelease();
     }
   }
 
   void SetCarrierAWaveform(const int &waveForm)
   {
+    Note::carrierAWaveform = waveForm;
+
     for(Note &note : notes)
     {
-      note.carrierAWaveform = waveForm;
       note.ResetCarrierA();
     }
   }
 
   void SetCarrierBWaveform(const int &waveForm)
   {
+    Note::carrierBWaveform = waveForm;
+
     for(Note &note : notes)
     {
-      note.carrierBWaveform = waveForm;
       note.ResetCarrierB();
     }
   }
 
   void SetModulatorWaveform(const int &waveForm)
   {
+    Note::modulatorWaveform = waveForm;
+
     for(Note &note : notes)
     {
-      note.modulatorWaveform = waveForm;
       note.ResetModulator();
     }
   }
 
   void SetModulatorKeyboardFollowing(const bool &follow)
   {
+    Note::modulatorFollowsKeyboard = follow;
+
     for(Note &note: notes)
     {
-      note.modulatorFollowsKeyboard = follow;
       note.UpdateModulatorFrequnecy();
     }
   }
 
   void SetFilterFreq(const float &freq)
   {
-    Note::ladder->frequency(freq);
-  }
-
-  void SetFilterOctave(const float &octave)
-  {
-    Note::ladder->octaveControl(octave);
+    Note::lowpassFreq = freq;
+    Note::ladder->frequency(Note::lowpassFreq);
   }
 
   void SetFilterResonance(const float &resonance)
   {
-    Note::ladder->resonance(resonance);
+    Note::lowpassResonance = resonance;
+    Note::ladder->resonance(Note::lowpassResonance);
   }
 
-// =====================
+//=======================
 //  MIDI NOTE HANDLING
-// =====================
+//=======================
 
+  // TODO: Add velocity into account of amplitude of notes
   void NoteOn(byte channel, byte note, byte velocity)
   { 
-    // This is an iterator of the note vector, notes
-    auto foundNote = FindNextOpenNote();
+    // Start by pointing to the note at the front of the array
+    Note *foundNote = &notes.front();
 
-    foundNote->value = note;
+    // Attempts to find a note that isn't playing
+    for(auto it = notes.begin(); it != notes.end(); ++it)
+    {
+      if(it->GetPlaying() == false)
+      {
+        foundNote = &(*it);
+        break;
+      }
+      // If this note has been playing for longer than the currently playing
+      // note lets take it in case all notes are playing then we will override
+      // it
+      else if(it->GetElapsedTime() > foundNote->GetElapsedTime())
+      {
+        foundNote = &(*it);
+      }
+    }
 
+    // TODO: Figure out way to stop clipping of notes when moving too fast
+  
+    // Update all values and turn on the note
+    foundNote->SetNote(note);
     foundNote->UpdateCarrierAFrequnecy();
     foundNote->UpdateCarrierBFrequnecy();
     foundNote->UpdateModulatorFrequnecy();
+
     foundNote->TurnOn();
   }
 
   void NoteOff(byte channel, byte note, byte velocity)
   {
-    auto foundNote = FindNote(note);
-
-    if(foundNote == notes.end())
+    // Find the currently playing note and turn it off
+    for(auto it = notes.begin(); it != notes.end(); ++it)
     {
-      return;
+      if((*it).GetNote() == note)
+      {
+        it->TurnOff();
+        break;
+      }
     }
-
-    foundNote->TurnOff();
   }
 
   void OnPitchWheel(uint8_t channel, int pitchBend)
@@ -328,6 +393,23 @@ namespace TIMS
       note.UpdateCarrierAFrequnecy();
       note.UpdateCarrierBFrequnecy();
       note.UpdateModulatorFrequnecy();
+    }
+  }
+
+//==========================
+// Initalization Function
+//==========================
+
+  void InitalizeNotes(AudioFilterLadder *ladder)
+  {
+    TIMS::Note::ladder = ladder;
+    TIMS::SetFilterFreq(TIMS::Note::lowpassFreq);
+    TIMS::SetFilterResonance(TIMS::Note::lowpassResonance);
+
+    // Add each note in the note array to the 
+    for(Note& note : notes)
+    {
+      note.InitalizeNote();
     }
   }
 }

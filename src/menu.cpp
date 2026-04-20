@@ -8,8 +8,10 @@
 
 #include <stdint.h>
 #include <Encoder.h>
+
 #include "midi.h"
-#include "synth_waveform.h"
+
+elapsedMillis screenTimer;
 
 struct EncoderButton
 {
@@ -49,8 +51,8 @@ Encoder encoder4(34,35);
 EncoderButton encoder4Button(33);
 
 // NOTE: How values are mapped here
-// - Freq -> 0-127 (MIDI Values)
-// - Fine -> 0-63 
+// - Freq -> 0-35
+// - Octave -> 0-11 
 // - Amp  -> 0-63
 
 // NOTE: Order of mappings for oscilators
@@ -71,14 +73,20 @@ enum WAVEFORMS
   , VARIABLETRIANGLE 
 };
 
-// Oscilators
-float frequencies[3] = {69, 69, 69};
-float fines[3] = {31, 31, 31};
+// Oscilators Encoder Values
+float frequencies[3] = {18, 18, 18};
+float octaves[3] = {6, 6, 0};
 float amplitudes[3] = {63, 63, 0};
 float waveforms[3] = {WAVEFORMS::TRIANGLE, WAVEFORMS::SAWTOOTH
   , WAVEFORMS::TRIANGLE};
 
+// NOTE:
+//  Modulator low frequency -> 0-35 (0Hz to ~6Hz)
+float modulatorLowFrequency = 0;
+
+// Modulator Encoder Buttons
 bool modulatorFollowsKeyboard = false;
+bool modualtorInLowMode = false;
 
 void(*p_freqFuncs[3])(const float&) = {TIMS::SetCarrierAFrequency
   , TIMS::SetCarrierBFrequency, TIMS::SetModulatorFrequency};
@@ -87,11 +95,13 @@ void(*p_ampFuncs[3])(const float&) = {TIMS::SetCarrierAAmplitude
 void(*p_waveFuncs[3])(const int&) = {TIMS::SetCarrierAWaveform
   , TIMS::SetCarrierBWaveform, TIMS::SetModulatorWaveform};
 
-float attack = (100.f / 1000.f) * 127;
-float decay = (200.f / 1000.f) * 127;
+// ADSR Encoder Values
+float attack = (75.f / 1000.f) * 127;
+float decay = (75.f / 1000.f) * 127;
 float sustain = (0.7f / 1.f) * 127;
-float release = (200.f / 1000.f) * 127;
+float release = (75.f / 1000.f) * 127;
 
+// Lowpass Encoder Values
 // NOTE:
 // Lowpass range
 // freq -> 0-127
@@ -103,6 +113,7 @@ float lowpassFine = 31;
 float lowpassOctave = 0;
 float lowpassResonance = 0.8f / 1.8f * 31;
 
+// Menu values
 constexpr uint8_t MAXMENUS = 5;
 uint8_t menuID = 0;
 
@@ -146,78 +157,123 @@ void DecrementMenu()
   menuID == 0 ? menuID = MAXMENUS - 1 : --menuID;
 }
 
+void PrintWaveform()
+{
+  Serial.print("Waveform: ");
+  switch(static_cast<WAVEFORMS>(waveforms[menuID]))
+  {
+    case TRIANGLE:
+      Serial.println("Triangle");
+      break;
+    case SAWTOOTH:
+      Serial.println("Sawtooth");
+      break;
+    case REVERSESAWTOOTH:
+      Serial.println("Reverse Sawtooth");
+      break;
+    case SAMPLEHOLD:
+      Serial.println("Sample and Hold");
+      break;
+    case PULSE:
+      Serial.println("Pulse");
+      break;
+    case SINE:
+      Serial.println("Sine");
+      break;
+    case SQUARE:
+      Serial.println("Square");
+      break;
+    case VARIABLETRIANGLE:
+      Serial.println("Variable Triangle");
+      break;
+    default:
+      Serial.println("DEFAULT: Triangle");
+  }
+}
+
 void PrintMenu()
 {
+  // Move to top left of terminal
+  Serial.print("\x1b[H");
+  // Clear the screen
+  Serial.print("\x1b[2J");
+
   Serial.println("=======================================================");
 
   switch(menuID)
   {
     case 0:
-    case 1:
-    case 2:
-      Serial.print("Oscilator ");
-      Serial.println(menuID);
+      Serial.println("Carrier A");
       Serial.println("=======================================================");
-      Serial.print("Frequency: ");
-      Serial.println(frequencies[menuID]);
-      Serial.print("Fine-Tune: ");
-      Serial.println(fines[menuID]);
-      Serial.print("Amplitude: ");
-      Serial.println(amplitudes[menuID]);
-      Serial.print("Waveform: ");
-      switch(static_cast<WAVEFORMS>(waveforms[menuID]))
+      Serial.printf("Frequency: %.2f Hz", TIMS::Note::baseCarrierAFreq);
+      Serial.println("");
+      Serial.printf("--> Frequency Offset Value: %.2f", (frequencies[menuID]) / 3.f);
+      Serial.println("");
+      Serial.printf("--> Octave Offset Value: %.2f", octaves[menuID]);
+      Serial.println("");
+      Serial.printf("Amplitude: %.2f", TIMS::Note::carrierAAmplitude);
+      Serial.println("");
+      PrintWaveform();
+      break;
+    case 1:
+      Serial.println("Carrier B");
+      Serial.println("=======================================================");
+      Serial.printf("Frequency: %.2f Hz", TIMS::Note::baseCarrierBFreq);
+      Serial.println("");
+      Serial.printf("--> Frequency Offset Value: %.2f", (frequencies[menuID]) / 3.f);
+      Serial.println("");
+      Serial.printf("--> Octave Offset Value: %.2f", octaves[menuID]);
+      Serial.println("");
+      Serial.printf("Amplitude: %.2f", TIMS::Note::carrierBAmplitude);
+      Serial.println("");
+      PrintWaveform();
+      break;
+    case 2:
+      Serial.println("Modualtor");
+      Serial.println("=======================================================");
+      if(modualtorInLowMode)
       {
-        case TRIANGLE:
-          Serial.println("Triangle");
-          break;
-        case SAWTOOTH:
-          Serial.println("Sawtooth");
-          break;
-        case REVERSESAWTOOTH:
-          Serial.println("Reverse Sawtooth");
-          break;
-        case SAMPLEHOLD:
-          Serial.println("Sample and Hold");
-          break;
-        case PULSE:
-          Serial.println("Pulse");
-          break;
-        case SINE:
-          Serial.println("Sine");
-          break;
-        case SQUARE:
-          Serial.println("Square");
-          break;
-        case VARIABLETRIANGLE:
-          Serial.println("Variable Triangle");
-          break;
-        default:
-          Serial.println("DEFAULT: Triangle");
+        Serial.printf("Frequency: %.2f Hz", modulatorLowFrequency / 6.f);
+        Serial.println("");
       }
+      else
+      {
+        Serial.printf("Frequency: %.2f Hz", TIMS::Note::baseModulatorFreq);
+        Serial.println("");
+        Serial.printf("--> Frequency Offset Value: %.2f", (frequencies[menuID]) / 3.f);
+        Serial.println("");
+        Serial.printf("--> Octave Offset Value: %.2f", octaves[menuID]);
+        Serial.println("");
+      }
+      Serial.printf("Amplitude: %.2f", TIMS::Note::modulatorAmplitude);
+      Serial.println("");
+      Serial.printf("Frequency Follows Keyboard: %s"
+          , modulatorFollowsKeyboard ? "true" : "false");
+      Serial.println("");
+      Serial.printf("Low Frequency Mode: %s"
+          , modualtorInLowMode? "true" : "false");
+      Serial.println("");
+      PrintWaveform();
       break;
     case 3:
       Serial.println("ADSR");
       Serial.println("=======================================================");
-      Serial.print("Attack: ");
-      Serial.println(attack);
-      Serial.print("Decay: ");
-      Serial.println(decay);
-      Serial.print("Sustain: ");
-      Serial.println(sustain);
-      Serial.print("Release: ");
-      Serial.println(release);
+      Serial.printf("Attack: %.2f ms", TIMS::Note::attack);
+      Serial.println("");
+      Serial.printf("Decay: %.2f ms", TIMS::Note::decay);
+      Serial.println("");
+      Serial.printf("Sustain: %.2f", TIMS::Note::sustain);
+      Serial.println("");
+      Serial.printf("Release: %.2f ms", TIMS::Note::release);
+      Serial.println("");
       break;
     case 4:
       Serial.println("Lowpass Ladder Filter");
       Serial.println("=======================================================");
-      Serial.print("Frequency: ");
-      Serial.println(lowpassFreq);
-      Serial.print("Fine: ");
-      Serial.println(lowpassFine);
-      Serial.print("Octave: ");
-      Serial.println(lowpassOctave);
-      Serial.print("Resonance: ");
-      Serial.println(lowpassResonance);
+      Serial.printf("Frequency: %.2f Hz", TIMS::Note::lowpassFreq);
+      Serial.println("");
+      Serial.printf("Resonance: %.2f", TIMS::Note::lowpassResonance);
+      Serial.println("");
       break;
   }
 }
@@ -227,10 +283,19 @@ void HandleEncoder2Press()
   switch(menuID)
   {
     case 2:
+      modualtorInLowMode = !modualtorInLowMode;
+  }
+}
+
+void HandleEncoder3Press()
+{
+  switch(menuID)
+  {
+    case 2:
       modulatorFollowsKeyboard = !modulatorFollowsKeyboard;
       TIMS::SetModulatorKeyboardFollowing(modulatorFollowsKeyboard);
-      Serial.print("Modulator Keyboard Follow Status Update: ");
-      Serial.println(modulatorFollowsKeyboard);
+      //Serial.print("Modulator Keyboard Follow Status Update: ");
+      //Serial.println(modulatorFollowsKeyboard);
       break;
   }
 }
@@ -247,7 +312,8 @@ void UpdateEncoderButtons()
   }
   if(IsEncoderButtonDown(encoder3Button))
   {
-    PrintMenu();
+    //PrintMenu();
+    HandleEncoder3Press();
   }
   if(IsEncoderButtonDown(encoder4Button))
   {
@@ -292,34 +358,62 @@ void UpdateWaveforms()
   p_waveFuncs[menuID](waveform);
 }
 
+/*!
+ *  Calculates the oscilator frequency based on the frequency knob and octave
+ *  knob
+ *
+ *  Default is A4 440Hz at 0,0 and the frequency and octave knobs adjust it 
+ *  from there 
+ */
 void UpdateOscilatorFreq()
 {
+  float frequencyKnobValue = frequencies[menuID] / 3.f - 6.f;
+  float octaveKnobValue = (octaves[menuID] - 6.f) * 12.f;
+
   float value = 440.f * pow(2.f
-      , static_cast<float>(((frequencies[menuID] - 69)
-        + ((fines[menuID] / 31.f) - 1))) / 12.f);
+      , (frequencyKnobValue + octaveKnobValue) / 12.f);
+
+  p_freqFuncs[menuID](value);
+}
+
+void UpdateModulatorLowFreq()
+{
+  float value = modulatorLowFrequency / 6.f;
 
   p_freqFuncs[menuID](value);
 }
 
 void UpdateOscilatorValues()
 {
-  if(UpdateEncoderValue(encoder1, frequencies[menuID], 4.f))
+  if(menuID == 2 && modualtorInLowMode 
+      && UpdateEncoderValue(encoder1, modulatorLowFrequency, 4.f, 35))
+  {
+    UpdateModulatorLowFreq(); 
+  }
+  else if(UpdateEncoderValue(encoder1, frequencies[menuID], 4.f, 35))
   {
     UpdateOscilatorFreq();
   }
-  if(UpdateEncoderValue(encoder2, fines[menuID], 4.f, 63))
-  {
-    UpdateOscilatorFreq();
-  }
+
   if(UpdateEncoderValue(encoder3, amplitudes[menuID], 4.f, 63))
   {
-    float value = amplitudes[menuID] / 31.f;
+    float value = amplitudes[menuID] / 63.f;
     p_ampFuncs[menuID](value);
   }
   if(UpdateEncoderValue(encoder4, waveforms[menuID], 4.f
         , static_cast<int>(WAVEFORMS::VARIABLETRIANGLE)))
   {
     UpdateWaveforms();
+  }
+
+  if(menuID == 2 && modualtorInLowMode)
+  {
+    return;
+  }
+
+  if(UpdateEncoderValue(encoder2, octaves[menuID], 4.f, 11))
+  {
+    UpdateOscilatorFreq();
   }
 }
 
@@ -366,7 +460,6 @@ void UpdateLowpassLadderValues()
   }
   if(UpdateEncoderValue(encoder3, lowpassOctave, 4.f, 63))
   {
-    TIMS::SetFilterOctave(lowpassOctave / 63.f);
   }
   if(UpdateEncoderValue(encoder4, lowpassResonance, 4., 31))
   {
@@ -394,5 +487,11 @@ void LoopMenu()
       break;
     case 4:
       UpdateLowpassLadderValues();
+  }
+
+  if(screenTimer > 100)
+  {
+    screenTimer = 0;
+    PrintMenu();
   }
 }

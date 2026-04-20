@@ -6,78 +6,101 @@
  *    Handles MIDI data interpretting
  */
 
-#include "synth_waveform.h"
-#include <Audio.h>
-
 #pragma once
+
+#include <Audio.h>
 
 namespace TIMS
 {
   struct Note
   {
-    Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fmA
-        , AudioSynthWaveformModulated *p_fmB , AudioEffectEnvelope *p_adsr
-        , const float &sineBase, const float &fmABase, const float &fmBBase);
+    public:
+      Note(AudioSynthWaveform *p_sine, AudioSynthWaveformModulated *p_fmA
+          , AudioSynthWaveformModulated *p_fmB , AudioEffectEnvelope *p_adsr);
 
-    enum PLAYING_STATE
-    {
-      PS_OFF = 0
-      , PS_ON
-      , PS_STARTING
-      , PS_STOPPING
-    };
-  
-    // TODO: Update this with playing state instead of bool
-    bool isPlaying = false;
-    byte value = 69;
+      enum PLAYING_STATE
+      {
+        PS_OFF = 0
+        , PS_ON
+        , PS_STARTING
+        , PS_STOPPING
+      };
 
-    // Modulator based on keyboard
-    // NOTE: May want to not make based on keyboard or make a switch control?
-    AudioSynthWaveform *modulator;
-    // Carrier based on keyboard
-    AudioSynthWaveformModulated *carrierA;
-    // Carrier based on keyboard with tuning
-    AudioSynthWaveformModulated *carrierB;
+      void SetNote(const byte &note);
+      byte GetNote();
 
+      bool GetPlaying();
+      const elapsedMillis &GetElapsedTime();
+    
+      void TurnOn();
+      void TurnOff();
 
-    AudioEffectEnvelope *adsr;
+      void UpdateCarrierAFrequnecy();
+      void UpdateCarrierBFrequnecy();
+      void UpdateModulatorFrequnecy();
+      
+      void UpdateCarrierAAmplitude();
+      void UpdateCarrierBAmplitude();
+      void UpdateModulatorAmplitude();
 
-    float modulatorFreq = 0.f;
-    float carrierAFreq = 0.f;
-    float carrierBFreq = 0.f;
+      void UpdateAttack();
+      void UpdateDecay();
+      void UpdateSustain();
+      void UpdateRelease();
 
-    float baseModulatorFreq = 0.f;
-    float baseCarrierAFreq = 0.f;
-    float baseCarrierBFreq = 0.f;
+      void ResetCarrierA();
+      void ResetCarrierB();
+      void ResetModulator();
 
-    float modulatorAmplitude = 0.f;
-    float carrierAAmplitude = 0.f;
-    float carrierBAmplitude = 0.f;
+      void InitalizeNote();
 
-    int carrierAWaveform = WAVEFORM_TRIANGLE;
-    int carrierBWaveform = WAVEFORM_SAWTOOTH;
-    int modulatorWaveform = WAVEFORM_TRIANGLE;
+      static inline float modulatorFreq = 0.f;
+      static inline float carrierAFreq = 0.f;
+      static inline float carrierBFreq = 0.f;
 
-    bool modulatorFollowsKeyboard = false;
+      static inline float baseModulatorFreq = 440.f * std::pow(2, -68.f / 12.f);
+      static inline float baseCarrierAFreq = 440.f;
+      static inline float baseCarrierBFreq = 440.f;
 
-    static inline float pitchWheelModifer = 0.f;
-    static inline uint8_t NoteIterator = 0;
-    static inline AudioFilterLadder *ladder = nullptr;
+      static inline float modulatorAmplitude = 0.f;
+      static inline float carrierAAmplitude = 1.f;
+      static inline float carrierBAmplitude = 1.f;
 
-    void TurnOn();
-    void TurnOff();
+      static inline int carrierAWaveform = WAVEFORM_TRIANGLE;
+      static inline int carrierBWaveform = WAVEFORM_TRIANGLE;
+      static inline int modulatorWaveform = WAVEFORM_TRIANGLE;
 
-    void UpdateCarrierAFrequnecy();
-    void UpdateCarrierBFrequnecy();
-    void UpdateModulatorFrequnecy();
+      static inline float attack = 75.f;
+      static inline float decay = 75.f;
+      static inline float sustain = 0.7f;
+      static inline float release = 75.f;
 
-    void ResetCarrierA();
-    void ResetCarrierB();
-    void ResetModulator();
+      static inline bool modulatorFollowsKeyboard = false;
+
+      static inline float lowpassFreq = 440.f * std::pow(2, 68 / 12.f);
+      static inline float lowpassResonance = 0.8f;
+
+      static inline float pitchWheelModifer = 0.f;
+      static inline uint8_t NoteIterator = 0;
+      static inline AudioFilterLadder *ladder = nullptr;
+    
+    private:
+      bool isPlaying = false;
+      byte noteValue = 69;
+      elapsedMillis timeSincePlayed = 0;
+
+      // Modulator based on keyboard
+      AudioSynthWaveform *modulator;
+      // Carrier based on keyboard
+      AudioSynthWaveformModulated *carrierA;
+      // Carrier based on keyboard with tuning
+      AudioSynthWaveformModulated *carrierB;
+
+      // The ADSR filter for each note
+      AudioEffectEnvelope *adsr;
   };
 
-  // NOTE: Will need to update the FindNote function in midi.cpp if this is
-  // changed
+  // Contains all notes that can be played
   inline std::vector<TIMS::Note> notes;
 
   // Amplitude and Frequency functions
@@ -105,10 +128,13 @@ namespace TIMS
 
   // Filter functions
   void SetFilterFreq(const float &freq);
-  void SetFilterOctave(const float &octave);
   void SetFilterResonance(const float &resonance);
 
+  // Midi Handling
   void NoteOn(byte channel, byte note, byte velocity);
   void NoteOff(byte channel, byte note, byte velocity);
   void OnPitchWheel(uint8_t channel, int pitchBend);
+
+  // Initalization functions for notes
+  void InitalizeNotes(AudioFilterLadder *ladder);
 }
